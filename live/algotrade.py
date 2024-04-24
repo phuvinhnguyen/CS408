@@ -4,6 +4,8 @@ import json
 import pandas as pd
 import pytz
 from datetime import datetime
+import os
+from ..data.vn30f1m_algotrade import get_dataframe
 
 F1M_CHANNEL = 'HNXDS:VN30F2405'
 TIMEZONE = pytz.timezone('Asia/Ho_Chi_Minh')
@@ -13,7 +15,6 @@ class LiveAlgoTrading:
                 history_save_file = './trading_history.csv',
                 past_trading_data_file = './a.csv',
                 dataframe_resample_time = '30min',
-                use_header_in_history_file = None,
                 number_of_used_trading_data = 40,
                 trading_waiting_time = 30000,
                  ):
@@ -26,10 +27,14 @@ class LiveAlgoTrading:
         self.save_file = history_save_file
         self.data_file = past_trading_data_file
         self.resample_time = dataframe_resample_time
-        self.header = use_header_in_history_file
         self.previous_clue = number_of_used_trading_data
         self.current_index = None
         self.time = trading_waiting_time
+
+        if os.path.exists(history_save_file):
+            self.header = True
+        else:
+            self.header = False
 
     def get_redis_processor(self, **kwargs):
         def run(redis_message):
@@ -45,7 +50,7 @@ class LiveAlgoTrading:
     def save_trading_history(self, history):
         data = history.to_csv().split('\n')
 
-        if self.header == None:
+        if not self.header:
             self.header = data[0]
             data = data[1] + '\n'
             with open(self.save_file, 'w') as f:
@@ -86,9 +91,8 @@ class LiveAlgoTrading:
             if pd.isna(return_df['Close'].iloc[-1]):
                 return None
 
-            if return_df[-1].index != self.current_index:
-                print(return_df)
-                self.current_index = return_df[-1].index
+            if str(return_df.index[-1]) != self.current_index:
+                self.current_index = str(return_df.index[-1])
                 return return_df
         
         return None
@@ -116,12 +120,7 @@ class LiveAlgoTrading:
         self.func = func
 
         def wrapper(**kwargs):
-            df = pd.read_csv(self.data_file)
-            df['datetime'] = pd.to_datetime(df['datetime'], format='mixed')
-            df.set_index('datetime', inplace=True)
-            df = df.resample('30min', closed='right', label='right').agg({'price': 'last'})
-            df.rename(columns={'price': 'Close'}, inplace=True)
-            df.dropna(inplace=True)
+            df = get_dataframe(self.data_file, resample_time=self.resample_time)
 
             self.init_data(df)
 
