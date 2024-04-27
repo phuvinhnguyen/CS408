@@ -5,9 +5,8 @@ import pandas as pd
 import pytz
 from datetime import datetime
 import os
-from ..data.vn30f1m_algotrade import get_dataframe
+from ..data.vn30f1m_algotrade import get_dataframe, fix_dataframe
 
-F1M_CHANNEL = 'HNXDS:VN30F2405'
 TIMEZONE = pytz.timezone('Asia/Ho_Chi_Minh')
 
 class LiveAlgoTrading:
@@ -17,6 +16,7 @@ class LiveAlgoTrading:
                 dataframe_resample_time = '30min',
                 number_of_used_trading_data = 40,
                 trading_waiting_time = 30000,
+                channel = 'HNXDS:VN30F2405',
                  ):
         self.init_redis()
         self.func = None
@@ -30,6 +30,7 @@ class LiveAlgoTrading:
         self.previous_clue = number_of_used_trading_data
         self.current_index = None
         self.time = trading_waiting_time
+        self.channel = channel
 
         if os.path.exists(history_save_file):
             self.header = True
@@ -43,6 +44,7 @@ class LiveAlgoTrading:
             if trading_df is not None:
                 output = self.func(trading_df, **kwargs).iloc[-1:]
                 print(output)
+                print('*'*20)
                 self.save_trading_history(output)
 
         return run
@@ -82,18 +84,13 @@ class LiveAlgoTrading:
             self.redis_data['Date'].append(dtime)
 
             return_df = pd.DataFrame.from_dict(self.redis_data)
-            return_df.set_index('Date', inplace=True)
-
-            return_df = return_df.resample(self.resample_time, closed='right', label='right').agg({'Close': 'last'})
-            return_df.dropna(inplace=True)
-            return_df = return_df[-self.previous_clue-1:-1]
-
-            if pd.isna(return_df['Close'].iloc[-1]):
-                return None
+            return_df = fix_dataframe(return_df, index_name='Date', Trading='Close', resample_time=self.resample_time)[-self.previous_clue-1:-1]
 
             if str(return_df.index[-1]) != self.current_index:
                 self.current_index = str(return_df.index[-1])
-                return return_df
+                print('time taking', self.current_index)
+                print('real time', dtime)
+                return return_df.copy(deep=True)
         
         return None
 
@@ -121,12 +118,11 @@ class LiveAlgoTrading:
 
         def wrapper(**kwargs):
             df = get_dataframe(self.data_file, resample_time=self.resample_time)
-
             self.init_data(df)
 
             pub_sub = self.redis_client.pubsub()
             print('start subscribing')
-            pub_sub.psubscribe(**{F1M_CHANNEL: self.get_redis_processor(**kwargs)})
+            pub_sub.psubscribe(**{self.channel: self.get_redis_processor(**kwargs)})
             pubsub_thread = pub_sub.run_in_thread(sleep_time=1)
             time.sleep(self.time)
             pubsub_thread.stop()

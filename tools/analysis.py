@@ -29,12 +29,18 @@ def plot_negative_gain(backtest_output, trading_df, date_range=3, plot_number = 
 
     plot_entry_points(negative_df, reset_index=False, ploting_params=ploting_params)
 
-def analysis(trading_df, fee=0.2, init_asset=1000, visual=True):
+def analysis(trading_df,
+             fee=0.2,
+             init_asset=1000,
+             visual=True,
+             position: str = 'Position',
+             price: str = 'Close'
+             ):
     trading = trading_df.copy(deep=True)
-    trading['start_point'] = trading['Position'].diff()
+    trading['start_point'] = trading[position].diff()
     trading = trading[trading['start_point'] != 0][1:]
-    trading['last_trade_profit'] = trading['Position'] * (trading['Close'].shift(-1) - trading['Close'])
-    trading['last_trade_profit_with_fee'] = trading['Position'] * (trading['Close'].shift(-1) - trading['Close']) - fee * trading['Position'].abs()
+    trading['last_trade_profit'] = trading[position] * (trading[price].shift(-1) - trading[price])
+    trading['last_trade_profit_with_fee'] = trading[position] * (trading[price].shift(-1) - trading[price]) - fee * trading[position].abs()
 
     trading['cummulated_profit'] = trading['last_trade_profit'].cumsum() + init_asset
     trading['cummulated_return'] = trading['cummulated_profit'] / init_asset
@@ -47,7 +53,7 @@ def analysis(trading_df, fee=0.2, init_asset=1000, visual=True):
     mdd = ta.max_drawdown(trading['cummulated_profit'])
     sharpe = ta.sharpe_ratio(trading['cummulated_profit'])
     sharpe_after_fee = ta.sharpe_ratio(trading['cummulated_profit_with_fee'])
-    number_of_trade = trading[trading['Position'] != 0]['Position'].count()
+    number_of_trade = trading[trading[position] != 0][position].count()
 
     if visual:
         # Print value

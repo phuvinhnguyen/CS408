@@ -1,30 +1,40 @@
 import redis
 import time
 import json
+import pandas as pd
 import pytz
 from datetime import datetime
-import pandas as pd
+import os
+from ..data.vn30f1m_algotrade import get_dataframe, fix_dataframe
 
-F1M_CHANNEL = 'HNXDS:VN30F2405'
+F1M_CHANNEL = 'VN30F1M05'#'HNXDS:VN30F2405'
 TIMEZONE = pytz.timezone('Asia/Ho_Chi_Minh')
 
-class LiveTrading:
+class LiveAlgoTrading:
     def __init__(self,
-                 func,
+                history_save_file = './trading_history.csv',
+                past_trading_data_file = './a.csv',
+                dataframe_resample_time = '30min',
+                number_of_used_trading_data = 40,
+                trading_waiting_time = 30000,
                  ):
         self.init_redis()
-        self.func = func
+        self.func = None
         self.redis_data = {
             'Close': [],
             'Date': []
         }
-        self.save_file = './trading_history.csv'
-        self.data_file = './a.csv'
-        self.resample_time = '30min'
-        self.header = None
-        self.previous_clue = 50
+        self.save_file = history_save_file
+        self.data_file = past_trading_data_file
+        self.resample_time = dataframe_resample_time
+        self.previous_clue = number_of_used_trading_data
         self.current_index = None
-        self.time = 30000
+        self.time = trading_waiting_time
+
+        if os.path.exists(history_save_file):
+            self.header = True
+        else:
+            self.header = False
 
     def get_redis_processor(self, **kwargs):
         def run(redis_message):
@@ -33,6 +43,7 @@ class LiveTrading:
             if trading_df is not None:
                 output = self.func(trading_df, **kwargs).iloc[-1:]
                 print(output)
+                print('-'*20)
                 self.save_trading_history(output)
 
         return run
@@ -40,7 +51,7 @@ class LiveTrading:
     def save_trading_history(self, history):
         data = history.to_csv().split('\n')
 
-        if self.header == None:
+        if not self.header:
             self.header = data[0]
             data = data[1] + '\n'
             with open(self.save_file, 'w') as f:
@@ -72,24 +83,18 @@ class LiveTrading:
             self.redis_data['Date'].append(dtime)
 
             return_df = pd.DataFrame.from_dict(self.redis_data)
-            return_df.set_index('Date', inplace=True)
-
-            return_df = return_df.resample(self.resample_time, closed='right', label='right').agg({'Close': 'last'})
-            return_df.dropna(inplace=True)
+            return_df = fix_dataframe(return_df, index_name='Date', Trading='Close', resample_time=self.resample_time)
+            
+            checking_df = return_df.copy(deep=True)
             return_df = return_df[-self.previous_clue-1:-1]
 
-            if pd.isna(return_df['Close'].iloc[-1]):
-                return None
-
-            try:
-                if str(return_df.index[-1]) != self.current_index:
-                    self.current_index = str(return_df.index[-1])
-                    return return_df
-            except Exception as e:
-                print(return_df)
-                print('error', '*'*20)
-                print(e)
-
+            if str(return_df.index[-1]) != self.current_index:
+                self.current_index = str(return_df.index[-1])
+                print('time taking', self.current_index)
+                print('time last', checking_df.index[-1])
+                print('real time', dtime)
+                return return_df.copy(deep=True)
+        
         return None
 
     def init_data(self, trading_df):
@@ -111,13 +116,18 @@ class LiveTrading:
         # check connection to redis OK
         print(self.redis_client.ping())
 
-    def __call__(self, trading_df, **kwargs):
-        if trading_df is not None:
-            self.init_data(trading_df)
+    def __call__(self, func):
+        self.func = func
 
-        pub_sub = self.redis_client.pubsub()
-        print('start subscribing')
-        pub_sub.psubscribe(**{F1M_CHANNEL: self.get_redis_processor(**kwargs)})
-        pubsub_thread = pub_sub.run_in_thread(sleep_time=1)
-        time.sleep(self.time)
-        pubsub_thread.stop()
+        def wrapper(**kwargs):
+            df = get_dataframe(self.data_file, resample_time=self.resample_time)
+            self.init_data(df)
+
+            pub_sub = self.redis_client.pubsub()
+            print('start subscribing')
+            pub_sub.psubscribe(**{F1M_CHANNEL: self.get_redis_processor(**kwargs)})
+            pubsub_thread = pub_sub.run_in_thread(sleep_time=1)
+            time.sleep(self.time)
+            pubsub_thread.stop()
+
+        return wrapper

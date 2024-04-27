@@ -8,7 +8,7 @@ def macd(trading: pd.DataFrame, value='Close', name='', **kwargs):
     slow = kwargs.get(f'slow{name}')
     signal = kwargs.get(f'signal{name}')
     diff_range = kwargs.get(f'diff_range{name}', 1)
-
+    
     macd = ta.macd(df[value], fast=fast, slow=slow, signal=signal, append=True)
 
     name_mapper = {v: v.split('_')[0]+name for v in macd.columns}

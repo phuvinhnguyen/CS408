@@ -4,13 +4,33 @@ from datetime import datetime, timedelta
 import csv
 import pandas as pd
 
-def get_dataframe(file_name, index_name = 'datetime', Trading = 'price', resample_time='30min'):
+def get_dataframe(file_name: str, index_name = 'datetime', Trading = 'price', resample_time='30min'):
     morning_start = pd.Timestamp('8:45').time()
-    morning_end = pd.Timestamp('11:00').time()
+    morning_end = pd.Timestamp('11:30').time()
     afternoon_start = pd.Timestamp('13:00').time()
     afternoon_end = pd.Timestamp('14:45').time()
 
     df = pd.read_csv(file_name)
+    df[index_name] = pd.to_datetime(df[index_name], format='mixed')
+    df.set_index(index_name, inplace=True)
+    df = df.resample(resample_time, closed='right', label='right', offset=pd.Timedelta(minutes=-1)).agg({Trading: 'last'})
+    df.rename(columns={Trading: 'Close'}, inplace=True)
+    df.dropna(inplace=True)
+
+    df = df.loc[
+        ((df.index.time >= morning_start) & (df.index.time <= morning_end)) |
+        ((df.index.time >= afternoon_start) & (df.index.time <= afternoon_end))
+    ]
+
+    return df
+
+def fix_dataframe(dataframe: pd.DataFrame, index_name = 'datetime', Trading = 'price', resample_time='30min'):
+    morning_start = pd.Timestamp('8:45').time()
+    morning_end = pd.Timestamp('11:30').time()
+    afternoon_start = pd.Timestamp('13:00').time()
+    afternoon_end = pd.Timestamp('14:45').time()
+
+    df = dataframe.copy(deep=True)
     df[index_name] = pd.to_datetime(df[index_name], format='mixed')
     df.set_index(index_name, inplace=True)
     df = df.resample(resample_time, closed='right', label='right', offset=pd.Timedelta(minutes=-1)).agg({Trading: 'last'})
