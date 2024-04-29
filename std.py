@@ -17,3 +17,11 @@ def deviation2std(trading: pd.DataFrame, value='Close', name='', **kwargs):
     df[f'dev2std{name}'] = df[value].diff(diff_range).diff(diff_range).rolling(window=period).std()
 
     return df
+
+def sharpe(trading: pd.DataFrame, value='Close', name='', **kwargs):
+    df = trading.copy(deep=True)
+
+    period = kwargs.get(f'period{name}')
+    df[f'sharpe{name}'] = df[value].rolling(period).apply(lambda x: ta.sharpe_ratio(x))
+
+    return df

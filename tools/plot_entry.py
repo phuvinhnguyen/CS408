@@ -7,6 +7,7 @@ def plot_entry_points(data: pd.DataFrame, reset_index: bool = True, ploting_para
         df.reset_index(inplace=True)
     # Set the size of the chart
     fig, ax = plt.subplots(figsize=(17, 7))
+    ax.grid(True)
 
     # Plot the 'Close' column
     for plot_name in ploting_params: 
